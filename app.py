@@ -4,25 +4,20 @@ import os
 
 st.set_page_config(page_title="Log Classifier", page_icon="📋", layout="wide")
 
-# Store API key in session state so it persists across reruns
-if "groq_api_key" not in st.session_state:
-    st.session_state.groq_api_key = ""
-
 st.title("📋 Hybrid Log Classification System")
 st.markdown("Upload a CSV with `source` and `log_message` columns to classify logs using Regex → BERT → LLM pipeline.")
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Configuration")
-    key_input = st.text_input(
+    st.text_input(
         "Groq API Key",
         type="password",
-        value=st.session_state.groq_api_key,
-        help="Required for LegacyCRM logs (LLM classification)"
+        key="groq_api_key",
+        help="Required for LegacyCRM logs"
     )
-    if key_input:
-        st.session_state.groq_api_key = key_input
-        os.environ["GROQ_API_KEY"] = key_input
+    if st.session_state.groq_api_key:
+        os.environ["GROQ_API_KEY"] = st.session_state.groq_api_key
         st.success("✅ API key saved!")
 
     st.divider()
@@ -34,7 +29,6 @@ with st.sidebar:
     """)
     st.divider()
     st.header("📁 CSV Format")
-    st.markdown("Your CSV must have:")
     st.code("source, log_message")
 
 # ── Main ───────────────────────────────────────────────────────────────────────
@@ -48,10 +42,10 @@ if uploaded_file:
         st.stop()
 
     st.subheader("📄 Uploaded Data")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, width='stretch')
 
     has_legacy = "LegacyCRM" in df["source"].values
-    api_key_ready = bool(st.session_state.groq_api_key)
+    api_key_ready = bool(st.session_state.get("groq_api_key", ""))
 
     if has_legacy and not api_key_ready:
         st.warning("⚠️ This CSV has LegacyCRM rows. Please enter your Groq API key in the sidebar.")
@@ -63,10 +57,9 @@ if uploaded_file:
     )
 
     if run_btn:
-        # Ensure env var is set before classify runs
         os.environ["GROQ_API_KEY"] = st.session_state.groq_api_key
 
-        with st.spinner("Classifying logs... this may take a moment for LLM calls."):
+        with st.spinner("Classifying... LLM calls may take a moment."):
             try:
                 from classify import classify
                 labels = classify(list(zip(df["source"], df["log_message"])))
@@ -74,7 +67,6 @@ if uploaded_file:
 
                 st.success("✅ Classification complete!")
 
-                st.subheader("📊 Results")
                 label_counts = df["target_label"].value_counts()
                 cols = st.columns(min(len(label_counts), 4))
                 for i, (label, count) in enumerate(label_counts.items()):
@@ -84,22 +76,24 @@ if uploaded_file:
                 st.divider()
 
                 def color_label(val):
-                    colors = {
+                    return {
                         "Workflow Error":      "background-color: #ffcccc",
                         "Deprecation Warning": "background-color: #fff3cc",
                         "User Action":         "background-color: #cce5ff",
                         "System Notification": "background-color: #ccffcc",
+                        "Security Alert":      "background-color: #f3ccff",
+                        "HTTP Log":            "background-color: #ffe0cc",
                         "Unclassified":        "background-color: #e0e0e0",
-                    }
-                    return colors.get(val, "")
+                    }.get(val, "")
 
-                styled = df.style.map(color_label, subset=["target_label"])
-                st.dataframe(styled, use_container_width=True)
+                st.dataframe(
+                    df.style.map(color_label, subset=["target_label"]),
+                    width='stretch'
+                )
 
-                csv_out = df.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    label="⬇️ Download Results CSV",
-                    data=csv_out,
+                    "⬇️ Download Results CSV",
+                    data=df.to_csv(index=False).encode("utf-8"),
                     file_name="classified_output.csv",
                     mime="text/csv"
                 )
@@ -109,16 +103,15 @@ if uploaded_file:
 
 else:
     st.info("👆 Upload a CSV file to get started.")
-    st.subheader("💡 Example Input")
     st.dataframe(pd.DataFrame({
         "source": ["ModernCRM", "BillingSystem", "LegacyCRM", "AnalyticsEngine"],
         "log_message": [
             "IP 192.168.133.114 blocked due to potential attack",
             "User User12345 logged in.",
-            "Case escalation for ticket ID 7324 failed because the assigned support agent is no longer active.",
+            "Case escalation for ticket ID 7324 failed.",
             "Backup completed successfully.",
         ]
-    }), use_container_width=True)
+    }), width='stretch')
 
 st.divider()
 st.markdown("<div style='text-align:center;color:#888;'>Hybrid Log Classifier · Regex → BERT → LLM</div>",
