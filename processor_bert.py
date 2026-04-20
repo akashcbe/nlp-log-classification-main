@@ -1,8 +1,14 @@
+import os
 import joblib
 from sentence_transformers import SentenceTransformer
 
-model_embedding = SentenceTransformer('all-MiniLM-L6-v2')  # Lightweight embedding model
-model_classification = joblib.load("models/log_classifier.joblib")
+model_embedding = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Build absolute path to the model file
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "log_classifier.joblib")
+
+model_classification = joblib.load(MODEL_PATH)
 
 
 def classify_with_bert(log_message):
@@ -11,7 +17,6 @@ def classify_with_bert(log_message):
     if max(probabilities) < 0.5:
         return "Unclassified"
     predicted_label = model_classification.predict(embeddings)[0]
-    
     return predicted_label
 
 
