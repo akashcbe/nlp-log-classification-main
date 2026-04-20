@@ -4,17 +4,27 @@ import os
 
 st.set_page_config(page_title="Log Classifier", page_icon="📋", layout="wide")
 
+# Store API key in session state so it persists across reruns
+if "groq_api_key" not in st.session_state:
+    st.session_state.groq_api_key = ""
+
 st.title("📋 Hybrid Log Classification System")
 st.markdown("Upload a CSV with `source` and `log_message` columns to classify logs using Regex → BERT → LLM pipeline.")
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Configuration")
-    groq_api_key = st.text_input(
+    key_input = st.text_input(
         "Groq API Key",
         type="password",
+        value=st.session_state.groq_api_key,
         help="Required for LegacyCRM logs (LLM classification)"
     )
+    if key_input:
+        st.session_state.groq_api_key = key_input
+        os.environ["GROQ_API_KEY"] = key_input
+        st.success("✅ API key saved!")
+
     st.divider()
     st.header("📖 Pipeline")
     st.markdown("""
@@ -41,20 +51,20 @@ if uploaded_file:
     st.dataframe(df, use_container_width=True)
 
     has_legacy = "LegacyCRM" in df["source"].values
+    api_key_ready = bool(st.session_state.groq_api_key)
 
-    if has_legacy:
-        if not groq_api_key:
-            st.warning("⚠️ This CSV has LegacyCRM rows. Please enter your Groq API key in the sidebar before classifying.")
-        else:
-            st.info("✅ Groq API key detected — LegacyCRM rows will use LLM classification.")
+    if has_legacy and not api_key_ready:
+        st.warning("⚠️ This CSV has LegacyCRM rows. Please enter your Groq API key in the sidebar.")
 
-    run_btn = st.button("🚀 Classify Logs", type="primary", use_container_width=False,
-                        disabled=(has_legacy and not groq_api_key))
+    run_btn = st.button(
+        "🚀 Classify Logs",
+        type="primary",
+        disabled=(has_legacy and not api_key_ready)
+    )
 
     if run_btn:
-        # Set env var right before classification
-        if groq_api_key:
-            os.environ["GROQ_API_KEY"] = groq_api_key
+        # Ensure env var is set before classify runs
+        os.environ["GROQ_API_KEY"] = st.session_state.groq_api_key
 
         with st.spinner("Classifying logs... this may take a moment for LLM calls."):
             try:
@@ -64,7 +74,6 @@ if uploaded_file:
 
                 st.success("✅ Classification complete!")
 
-                # Summary metrics
                 st.subheader("📊 Results")
                 label_counts = df["target_label"].value_counts()
                 cols = st.columns(min(len(label_counts), 4))
@@ -74,21 +83,19 @@ if uploaded_file:
 
                 st.divider()
 
-                # Color-coded table
                 def color_label(val):
                     colors = {
-                        "Workflow Error":       "background-color: #ffcccc",
-                        "Deprecation Warning":  "background-color: #fff3cc",
-                        "User Action":          "background-color: #cce5ff",
-                        "System Notification":  "background-color: #ccffcc",
-                        "Unclassified":         "background-color: #e0e0e0",
+                        "Workflow Error":      "background-color: #ffcccc",
+                        "Deprecation Warning": "background-color: #fff3cc",
+                        "User Action":         "background-color: #cce5ff",
+                        "System Notification": "background-color: #ccffcc",
+                        "Unclassified":        "background-color: #e0e0e0",
                     }
                     return colors.get(val, "")
 
                 styled = df.style.map(color_label, subset=["target_label"])
                 st.dataframe(styled, use_container_width=True)
 
-                # Download
                 csv_out = df.to_csv(index=False).encode("utf-8")
                 st.download_button(
                     label="⬇️ Download Results CSV",
@@ -99,6 +106,7 @@ if uploaded_file:
 
             except Exception as e:
                 st.error(f"❌ Classification failed: {e}")
+
 else:
     st.info("👆 Upload a CSV file to get started.")
     st.subheader("💡 Example Input")
